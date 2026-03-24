@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Snake Game</title>
+    <style>
+        /* Basic styling for the game container and controls */
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            touch-action: manipulation;
+            font-family: Arial, sans-serif;
+            color: white;
+            overflow: hidden;
+        }
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            padding-top: 10px;
+        }
+        canvas {
+            display: block;
+            background: #111;
+            border: 2px solid #333;
+            margin-bottom: 10px;
+        }
+        #controls {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            padding: 10px;
+            width: 100%;
+            max-width: 300px;
+        }
+        .btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            touch-action: manipulation;
+            user-select: none;
+            margin: 0 auto;
+        }
+        .btn:active {
+            background: #45a049;
+            transform: scale(0.95);
+        }
+        #score-display {
+            font-size: 20px;
+            margin-bottom: 10px;
+        }
+        #leaderboard {
+            width: 100%;
+            max-width: 300px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 10px;
+            margin-top: 10px;
+        }
+        #game-over {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+            z-index: 100;
+        }
+        #restart-btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-size: 16px;
+        }
+        #pause-btn {
+            background: #FF9800;
+            color: white;
+            border: none;
+            padding: 5px 15px;
+            border-radius: 5px;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+<div id="game-container">
+    <div id="score-display">Очки: 0</div>
+    <canvas id="gameCanvas" width="300" height="300"></canvas>
+
+    <div id="controls">
+        <div></div>
+        <button class="btn" id="up">↑</button>
+        <div></div>
+        <button class="btn" id="left">←</button>
+        <button class="btn" id="down">↓</button>
+        <button class="btn" id="right">→</button>
+    </div>
+
+    <button id="pause-btn">⏸️ Пауза</button>
+
+    <div id="leaderboard">
+        <h3>🏆 Топ игроков:</h3>
+        <ol id="scores-list"></ol>
+    </div>
+
+    <div id="game-over">
+        <h2>Игра окончена!</h2>
+        <p id="final-score">Очки: 0</p>
+        <button id="restart-btn">Играть снова</button>
+    </div>
+</div>
+
+<script>
+// Canvas and context
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Grid settings
+const gridSize = 10;
+const tileCount = canvas.width / gridSize;
+
+// Game state variables
+let snake = [];
+let food = {};
+let obstacles = [];
+let dx = 0;
+let dy = 0;
+let directionChanged = false;
+let score = 0;
+let gameSpeed = 150;
+let gameLoopId = null;
+let isGameOver = false;
+let isPaused = false;
+let playerName = 'Игрок';
+let userId = '';
+
+// UI elements
+const scoreDisplay = document.getElementById('score-display');
+const scoresList = document.getElementById('scores-list');
+const gameOverDiv = document.getElementById('game-over');
+const finalScoreDisplay = document.getElementById('final-score');
+const restartBtn = document.getElementById('restart-btn');
+const pauseBtn = document.getElementById('pause-btn');
+
+// IndexedDB setup for local leaderboard
+const dbRequest = indexedDB.open('SnakeGameDB', 3);
+dbRequest.onupgradeneeded = (event) => {
+    const db = event.target.result;
+    if (!db.objectStoreNames.contains('scores')) {
+        const store = db.createObjectStore('scores', { keyPath: 'id', autoIncrement: true });
+        store.createIndex('score', 'score', { unique: false });
+        store.createIndex('name', 'name', { unique: false });
+    }
+};
+
+/**
+ * Initialise or reset the game state.
+ */
+function initGame() {
+    snake = [{ x: 15 * gridSize, y: 15 * gridSize }];
+    food = generateFood();
+    obstacles = generateObstacles(3);
+    dx = gridSize;
+    dy = 0;
+    directionChanged = false;
+    score = 0;
+    gameSpeed = 150;
+    isGameOver = false;
+    isPaused = false;
+    pauseBtn.textContent = '⏸️ Пауза';
+    scoreDisplay.textContent = `Очки: ${score}`;
+    gameOverDiv.style.display = 'none';
+    if (gameLoopId) clearInterval(gameLoopId);
+    gameLoopId = setInterval(gameLoop, gameSpeed);
+}
+
+/**
+ * Generate a food position not colliding with the snake or obstacles.
+ */
+function generateFood() {
+    let newFood;
+    do {
+        newFood = {
+            x: Math.floor(Math.random() * tileCount) * gridSize,
+            y: Math.floor(Math.random() * tileCount) * gridSize
+        };
+    } while (snake.some(segment => segment.x === newFood.x && segment.y === newFood.y) ||
+             obstacles.some(obs => obs.x === newFood.x && obs.y === newFood.y));
+    return newFood;
+}
+
+/**
+ * Generate a given number of obstacles at random positions.
+ */
+function generateObstacles(count) {
+    const obs = [];
+    for (let i = 0; i < count; i++) {
+        let obstacle;
+        do {
+            obstacle = {
+                x: Math.floor(Math.random() * tileCount) * gridSize,
+                y: Math.floor(Math.random() * tileCount) * gridSize
+            };
+        } while (snake.some(segment => segment.x === obstacle.x && segment.y === obstacle.y) ||
+                 obs.some(o => o.x === obstacle.x && o.y === obstacle.y) ||
+                 (food.x === obstacle.x && food.y === obstacle.y));
+        obs.push(obstacle);
+    }
+    return obs;
+}
+
+/**
+ * Main game loop: update state and render.
+ */
+function gameLoop() {
+    if (isPaused || isGameOver) return;
+    directionChanged = false;
+    // Move snake head
+    const head = {
+        x: snake[0].x + dx,
+        y: snake[0].y + dy
+    };
+    // Wrap around edges
+    if (head.x < 0) head.x = canvas.width - gridSize;
+    if (head.x >= canvas.width) head.x = 0;
+    if (head.y < 0) head.y = canvas.height - gridSize;
+    if (head.y >= canvas.height) head.y = 0;
+    // Collision with self or obstacles
+    if (snake.some(segment => segment.x === head.x && segment.y === head.y) ||
+        obstacles.some(obs => obs.x === head.x && obs.y === head.y)) {
+        endGame();
+        return;
+    }
+    snake.unshift(head);
+    // Eating food
+    if (head.x === food.x && head.y === food.y) {
+        vibrate(50);
+        score++;
+        scoreDisplay.textContent = `Очки: ${score}`;
+        food = generateFood();
+        // Increase speed every five points but keep minimum delay of 50ms
+        if (score % 5 === 0 && gameSpeed > 50) {
+            gameSpeed -= 10;
+            clearInterval(gameLoopId);
+            gameLoopId = setInterval(gameLoop, gameSpeed);
+        }
+        // Generate additional obstacle every 5 points to increase difficulty
+        if (score % 5 === 0) {
+            obstacles.push(...generateObstacles(1));
+        }
+    } else {
+        snake.pop();
+    }
+    drawGame();
+}
+
+/**
+ * Render the game objects onto the canvas.
+ */
+function drawGame() {
+    // Clear background
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Draw snake
+    ctx.fillStyle = '#4CAF50';
+    snake.forEach(segment => ctx.fillRect(segment.x, segment.y, gridSize, gridSize));
+    // Draw food
+    ctx.fillStyle = '#FF5252';
+    ctx.beginPath();
+    ctx.arc(food.x + gridSize / 2, food.y + gridSize / 2, gridSize / 2, 0, Math.PI * 2);
+    ctx.fill();
+    // Draw obstacles
+    ctx.fillStyle = '#757575';
+    obstacles.forEach(obs => ctx.fillRect(obs.x, obs.y, gridSize, gridSize));
+}
+
+/**
+ * End the game and display the game over screen.
+ */
+function endGame() {
+    isGameOver = true;
+    clearInterval(gameLoopId);
+    finalScoreDisplay.textContent = `Очки: ${score}`;
+    gameOverDiv.style.display = 'block';
+    saveScore();
+    loadLeaderboard();
+    if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
+}
+
+/**
+ * Toggle pause/resume state.
+ */
+function togglePause() {
+    if (isGameOver) return;
+    isPaused = !isPaused;
+    pauseBtn.textContent = isPaused ? '▶️ Продолжить' : '⏸️ Пауза';
+}
+
+/**
+ * Trigger device vibration if supported.
+ */
+function vibrate(duration) {
+    if ('vibrate' in navigator) navigator.vibrate(duration);
+}
+
+/**
+ * Save the current score to IndexedDB for a local leaderboard.
+ */
+function saveScore() {
+    const db = dbRequest.result;
+    const transaction = db.transaction(['scores'], 'readwrite');
+    const store = transaction.objectStore('scores');
+    store.add({
+        userId: userId,
+        name: playerName,
+        score: score,
+        date: new Date().toISOString()
+    });
+}
+
+/**
+ * Load the top 10 scores from IndexedDB and display them.
+ */
+function loadLeaderboard() {
+    const db = dbRequest.result;
+    const transaction = db.transaction(['scores'], 'readonly');
+    const store = transaction.objectStore('scores');
+    const index = store.index('score');
+    const request = index.openCursor(null, 'prev');
+    const topScores = [];
+    request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (cursor && topScores.length < 10) {
+            topScores.push(cursor.value);
+            cursor.continue();
+        } else {
+            displayLeaderboard(topScores);
+        }
+    };
+}
+
+/**
+ * Update the leaderboard display with the given scores.
+ */
+function displayLeaderboard(scores) {
+    scoresList.innerHTML = '';
+    scores.forEach((item, index) => {
+        const li = document.createElement('li');
+        li.textContent = `${index + 1}. ${item.name}: ${item.score}`;
+        scoresList.appendChild(li);
+    });
+}
+
+/**
+ * Change the direction of the snake if it is a valid turn.
+ */
+function changeDirection(newDx, newDy) {
+    if (directionChanged) return;
+    const goingUp = dy === -gridSize;
+    const goingDown = dy === gridSize;
+    const goingLeft = dx === -gridSize;
+    const goingRight = dx === gridSize;
+    const newGoingUp = newDy === -gridSize;
+    const newGoingDown = newDy === gridSize;
+    const newGoingLeft = newDx === -gridSize;
+    const newGoingRight = newDx === gridSize;
+    // Prevent snake from reversing into itself
+    if ((goingUp && newGoingDown) || (goingDown && newGoingUp) || (goingLeft && newGoingRight) || (goingRight && newGoingLeft)) {
+        return;
+    }
+    dx = newDx;
+    dy = newDy;
+    directionChanged = true;
+    vibrate(20);
+}
+
+// Control buttons
+document.getElementById('up').addEventListener('click', () => changeDirection(0, -gridSize));
+document.getElementById('down').addEventListener('click', () => changeDirection(0, gridSize));
+document.getElementById('left').addEventListener('click', () => changeDirection(-gridSize, 0));
+document.getElementById('right').addEventListener('click', () => changeDirection(gridSize, 0));
+pauseBtn.addEventListener('click', togglePause);
+
+// Touch support for mobile
+['touchstart', 'touchend'].forEach(eventType => {
+    document.getElementById('up').addEventListener(eventType, (e) => {
+        e.preventDefault();
+        changeDirection(0, -gridSize);
+    });
+    document.getElementById('down').addEventListener(eventType, (e) => {
+        e.preventDefault();
+        changeDirection(0, gridSize);
+    });
+    document.getElementById('left').addEventListener(eventType, (e) => {
+        e.preventDefault();
+        changeDirection(-gridSize, 0);
+    });
+    document.getElementById('right').addEventListener(eventType, (e) => {
+        e.preventDefault();
+        changeDirection(gridSize, 0);
+    });
+});
+restartBtn.addEventListener('click', initGame);
+
+// Telegram WebApp integration
+if (window.Telegram && Telegram.WebApp) {
+    Telegram.WebApp.expand();
+    Telegram.WebApp.enableClosingConfirmation();
+    const user = Telegram.WebApp.initDataUnsafe.user;
+    if (user) {
+        userId = user.id;
+        playerName = user.username ? `@${user.username}` : `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Игрок';
+    }
+}
+
+// Start the game once IndexedDB is ready
+dbRequest.onsuccess = () => {
+    loadLeaderboard();
+    initGame();
+};
+
+// Keyboard controls for desktop
+document.addEventListener('keydown', (event) => {
+    switch (event.key) {
+        case 'ArrowUp':
+        case 'w':
+        case 'W':
+            changeDirection(0, -gridSize);
+            break;
+        case 'ArrowDown':
+        case 's':
+        case 'S':
+            changeDirection(0, gridSize);
+            break;
+        case 'ArrowLeft':
+        case 'a':
+        case 'A':
+            changeDirection(-gridSize, 0);
+            break;
+        case 'ArrowRight':
+        case 'd':
+        case 'D':
+            changeDirection(gridSize, 0);
+            break;
+        case ' ': // Space bar toggles pause
+            togglePause();
+            break;
+    }
+});
+</script>
+</body>
+</html>
