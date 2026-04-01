@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Snake Game</title>
     <style>
-        /* Basic styling for the game container and controls */
         body {
             margin: 0;
             padding: 0;
@@ -19,14 +18,17 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            height: 100vh;
-            padding-top: 10px;
+            min-height: 100vh;
+            padding: 10px 12px 20px;
+            box-sizing: border-box;
         }
         canvas {
             display: block;
             background: #111;
             border: 2px solid #333;
             margin-bottom: 10px;
+            width: min(300px, calc(100vw - 24px));
+            height: min(300px, calc(100vw - 24px));
         }
         #controls {
             display: grid;
@@ -66,6 +68,14 @@
             background: rgba(0, 0, 0, 0.7);
             border-radius: 10px;
             margin-top: 10px;
+            box-sizing: border-box;
+        }
+        #leaderboard h3 {
+            margin: 0 0 10px;
+        }
+        #scores-list {
+            padding-left: 20px;
+            margin: 0;
         }
         #game-over {
             position: fixed;
@@ -106,37 +116,34 @@
 
     <div id="controls">
         <div></div>
-        <button class="btn" id="up">↑</button>
+        <button class="btn" id="up" type="button">↑</button>
         <div></div>
-        <button class="btn" id="left">←</button>
-        <button class="btn" id="down">↓</button>
-        <button class="btn" id="right">→</button>
+        <button class="btn" id="left" type="button">←</button>
+        <button class="btn" id="down" type="button">↓</button>
+        <button class="btn" id="right" type="button">→</button>
     </div>
 
-    <button id="pause-btn">⏸️ Пауза</button>
+    <button id="pause-btn" type="button">⏸️ Пауза</button>
 
     <div id="leaderboard">
-        <h3>🏆 Топ игроков:</h3>
+        <h3>🏆 Локальный топ:</h3>
         <ol id="scores-list"></ol>
     </div>
 
     <div id="game-over">
         <h2>Игра окончена!</h2>
         <p id="final-score">Очки: 0</p>
-        <button id="restart-btn">Играть снова</button>
+        <button id="restart-btn" type="button">Играть снова</button>
     </div>
 </div>
 
 <script>
-// Canvas and context
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// Grid settings
 const gridSize = 10;
 const tileCount = canvas.width / gridSize;
 
-// Game state variables
 let snake = [];
 let food = {};
 let obstacles = [];
@@ -150,8 +157,8 @@ let isGameOver = false;
 let isPaused = false;
 let playerName = 'Игрок';
 let userId = '';
+let db = null;
 
-// UI elements
 const scoreDisplay = document.getElementById('score-display');
 const scoresList = document.getElementById('scores-list');
 const gameOverDiv = document.getElementById('game-over');
@@ -159,20 +166,46 @@ const finalScoreDisplay = document.getElementById('final-score');
 const restartBtn = document.getElementById('restart-btn');
 const pauseBtn = document.getElementById('pause-btn');
 
-// IndexedDB setup for local leaderboard
+function isOccupied(cell, segments = snake) {
+    return segments.some(segment => segment.x === cell.x && segment.y === cell.y);
+}
+
+function displayLeaderboard(scores) {
+    scoresList.innerHTML = '';
+    if (scores.length === 0) {
+        const li = document.createElement('li');
+        li.textContent = 'Пока нет результатов';
+        scoresList.appendChild(li);
+        return;
+    }
+
+    scores.forEach((item) => {
+        const li = document.createElement('li');
+        li.textContent = `${item.name}: ${item.score}`;
+        scoresList.appendChild(li);
+    });
+}
+
 const dbRequest = indexedDB.open('SnakeGameDB', 3);
 dbRequest.onupgradeneeded = (event) => {
-    const db = event.target.result;
-    if (!db.objectStoreNames.contains('scores')) {
-        const store = db.createObjectStore('scores', { keyPath: 'id', autoIncrement: true });
+    const nextDb = event.target.result;
+    if (!nextDb.objectStoreNames.contains('scores')) {
+        const store = nextDb.createObjectStore('scores', { keyPath: 'id', autoIncrement: true });
         store.createIndex('score', 'score', { unique: false });
         store.createIndex('name', 'name', { unique: false });
     }
 };
+dbRequest.onerror = () => {
+    console.error('IndexedDB unavailable:', dbRequest.error);
+    displayLeaderboard([]);
+    initGame();
+};
+dbRequest.onsuccess = () => {
+    db = dbRequest.result;
+    loadLeaderboard();
+    initGame();
+};
 
-/**
- * Initialise or reset the game state.
- */
 function initGame() {
     snake = [{ x: 15 * gridSize, y: 15 * gridSize }];
     food = generateFood();
@@ -187,13 +220,13 @@ function initGame() {
     pauseBtn.textContent = '⏸️ Пауза';
     scoreDisplay.textContent = `Очки: ${score}`;
     gameOverDiv.style.display = 'none';
-    if (gameLoopId) clearInterval(gameLoopId);
+    if (gameLoopId) {
+        clearInterval(gameLoopId);
+    }
     gameLoopId = setInterval(gameLoop, gameSpeed);
+    drawGame();
 }
 
-/**
- * Generate a food position not colliding with the snake or obstacles.
- */
 function generateFood() {
     let newFood;
     do {
@@ -201,16 +234,15 @@ function generateFood() {
             x: Math.floor(Math.random() * tileCount) * gridSize,
             y: Math.floor(Math.random() * tileCount) * gridSize
         };
-    } while (snake.some(segment => segment.x === newFood.x && segment.y === newFood.y) ||
-             obstacles.some(obs => obs.x === newFood.x && obs.y === newFood.y));
+    } while (
+        isOccupied(newFood) ||
+        obstacles.some((obs) => obs.x === newFood.x && obs.y === newFood.y)
+    );
     return newFood;
 }
 
-/**
- * Generate a given number of obstacles at random positions.
- */
 function generateObstacles(count) {
-    const obs = [];
+    const generated = [];
     for (let i = 0; i < count; i++) {
         let obstacle;
         do {
@@ -218,113 +250,120 @@ function generateObstacles(count) {
                 x: Math.floor(Math.random() * tileCount) * gridSize,
                 y: Math.floor(Math.random() * tileCount) * gridSize
             };
-        } while (snake.some(segment => segment.x === obstacle.x && segment.y === obstacle.y) ||
-                 obs.some(o => o.x === obstacle.x && o.y === obstacle.y) ||
-                 (food.x === obstacle.x && food.y === obstacle.y));
-        obs.push(obstacle);
+        } while (
+            isOccupied(obstacle) ||
+            generated.some((item) => item.x === obstacle.x && item.y === obstacle.y) ||
+            (food.x === obstacle.x && food.y === obstacle.y) ||
+            obstacles.some((item) => item.x === obstacle.x && item.y === obstacle.y)
+        );
+        generated.push(obstacle);
     }
-    return obs;
+    return generated;
 }
 
-/**
- * Main game loop: update state and render.
- */
 function gameLoop() {
-    if (isPaused || isGameOver) return;
+    if (isPaused || isGameOver) {
+        return;
+    }
+
     directionChanged = false;
-    // Move snake head
+
     const head = {
         x: snake[0].x + dx,
         y: snake[0].y + dy
     };
-    // Wrap around edges
+
     if (head.x < 0) head.x = canvas.width - gridSize;
     if (head.x >= canvas.width) head.x = 0;
     if (head.y < 0) head.y = canvas.height - gridSize;
     if (head.y >= canvas.height) head.y = 0;
-    // Collision with self or obstacles
-    if (snake.some(segment => segment.x === head.x && segment.y === head.y) ||
-        obstacles.some(obs => obs.x === head.x && obs.y === head.y)) {
+
+    const isEating = head.x === food.x && head.y === food.y;
+    const bodyToCheck = isEating ? snake : snake.slice(0, -1);
+
+    if (
+        isOccupied(head, bodyToCheck) ||
+        obstacles.some((obs) => obs.x === head.x && obs.y === head.y)
+    ) {
         endGame();
         return;
     }
+
     snake.unshift(head);
-    // Eating food
-    if (head.x === food.x && head.y === food.y) {
+
+    if (isEating) {
         vibrate(50);
         score++;
         scoreDisplay.textContent = `Очки: ${score}`;
         food = generateFood();
-        // Increase speed every five points but keep minimum delay of 50ms
+
         if (score % 5 === 0 && gameSpeed > 50) {
             gameSpeed -= 10;
             clearInterval(gameLoopId);
             gameLoopId = setInterval(gameLoop, gameSpeed);
         }
-        // Generate additional obstacle every 5 points to increase difficulty
+
         if (score % 5 === 0) {
             obstacles.push(...generateObstacles(1));
         }
     } else {
         snake.pop();
     }
+
     drawGame();
 }
 
-/**
- * Render the game objects onto the canvas.
- */
 function drawGame() {
-    // Clear background
     ctx.fillStyle = '#111';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    // Draw snake
+
     ctx.fillStyle = '#4CAF50';
-    snake.forEach(segment => ctx.fillRect(segment.x, segment.y, gridSize, gridSize));
-    // Draw food
+    snake.forEach((segment) => ctx.fillRect(segment.x, segment.y, gridSize, gridSize));
+
     ctx.fillStyle = '#FF5252';
     ctx.beginPath();
     ctx.arc(food.x + gridSize / 2, food.y + gridSize / 2, gridSize / 2, 0, Math.PI * 2);
     ctx.fill();
-    // Draw obstacles
+
     ctx.fillStyle = '#757575';
-    obstacles.forEach(obs => ctx.fillRect(obs.x, obs.y, gridSize, gridSize));
+    obstacles.forEach((obs) => ctx.fillRect(obs.x, obs.y, gridSize, gridSize));
 }
 
-/**
- * End the game and display the game over screen.
- */
 function endGame() {
     isGameOver = true;
     clearInterval(gameLoopId);
     finalScoreDisplay.textContent = `Очки: ${score}`;
     gameOverDiv.style.display = 'block';
-    saveScore();
-    loadLeaderboard();
-    if ('vibrate' in navigator) navigator.vibrate([200, 100, 200]);
+
+    if (score > 0) {
+        saveScore();
+        loadLeaderboard();
+    }
+
+    if ('vibrate' in navigator) {
+        navigator.vibrate([200, 100, 200]);
+    }
 }
 
-/**
- * Toggle pause/resume state.
- */
 function togglePause() {
-    if (isGameOver) return;
+    if (isGameOver) {
+        return;
+    }
     isPaused = !isPaused;
     pauseBtn.textContent = isPaused ? '▶️ Продолжить' : '⏸️ Пауза';
 }
 
-/**
- * Trigger device vibration if supported.
- */
 function vibrate(duration) {
-    if ('vibrate' in navigator) navigator.vibrate(duration);
+    if ('vibrate' in navigator) {
+        navigator.vibrate(duration);
+    }
 }
 
-/**
- * Save the current score to IndexedDB for a local leaderboard.
- */
 function saveScore() {
-    const db = dbRequest.result;
+    if (!db) {
+        return;
+    }
+
     const transaction = db.transaction(['scores'], 'readwrite');
     const store = transaction.objectStore('scores');
     store.add({
@@ -333,46 +372,43 @@ function saveScore() {
         score: score,
         date: new Date().toISOString()
     });
+    transaction.onerror = () => {
+        console.error('Failed to save score:', transaction.error);
+    };
 }
 
-/**
- * Load the top 10 scores from IndexedDB and display them.
- */
 function loadLeaderboard() {
-    const db = dbRequest.result;
+    if (!db) {
+        displayLeaderboard([]);
+        return;
+    }
+
     const transaction = db.transaction(['scores'], 'readonly');
     const store = transaction.objectStore('scores');
     const index = store.index('score');
     const request = index.openCursor(null, 'prev');
     const topScores = [];
+
     request.onsuccess = (event) => {
         const cursor = event.target.result;
         if (cursor && topScores.length < 10) {
             topScores.push(cursor.value);
             cursor.continue();
-        } else {
-            displayLeaderboard(topScores);
+            return;
         }
+        displayLeaderboard(topScores);
+    };
+    request.onerror = () => {
+        console.error('Failed to load leaderboard:', request.error);
+        displayLeaderboard([]);
     };
 }
 
-/**
- * Update the leaderboard display with the given scores.
- */
-function displayLeaderboard(scores) {
-    scoresList.innerHTML = '';
-    scores.forEach((item, index) => {
-        const li = document.createElement('li');
-        li.textContent = `${index + 1}. ${item.name}: ${item.score}`;
-        scoresList.appendChild(li);
-    });
-}
-
-/**
- * Change the direction of the snake if it is a valid turn.
- */
 function changeDirection(newDx, newDy) {
-    if (directionChanged) return;
+    if (directionChanged) {
+        return;
+    }
+
     const goingUp = dy === -gridSize;
     const goingDown = dy === gridSize;
     const goingLeft = dx === -gridSize;
@@ -381,63 +417,65 @@ function changeDirection(newDx, newDy) {
     const newGoingDown = newDy === gridSize;
     const newGoingLeft = newDx === -gridSize;
     const newGoingRight = newDx === gridSize;
-    // Prevent snake from reversing into itself
-    if ((goingUp && newGoingDown) || (goingDown && newGoingUp) || (goingLeft && newGoingRight) || (goingRight && newGoingLeft)) {
+
+    if (
+        (goingUp && newGoingDown) ||
+        (goingDown && newGoingUp) ||
+        (goingLeft && newGoingRight) ||
+        (goingRight && newGoingLeft)
+    ) {
         return;
     }
+
     dx = newDx;
     dy = newDy;
     directionChanged = true;
     vibrate(20);
 }
 
-// Control buttons
 document.getElementById('up').addEventListener('click', () => changeDirection(0, -gridSize));
 document.getElementById('down').addEventListener('click', () => changeDirection(0, gridSize));
 document.getElementById('left').addEventListener('click', () => changeDirection(-gridSize, 0));
 document.getElementById('right').addEventListener('click', () => changeDirection(gridSize, 0));
 pauseBtn.addEventListener('click', togglePause);
+restartBtn.addEventListener('click', initGame);
 
-// Touch support for mobile
-['touchstart', 'touchend'].forEach(eventType => {
-    document.getElementById('up').addEventListener(eventType, (e) => {
-        e.preventDefault();
+['touchstart', 'touchend'].forEach((eventType) => {
+    document.getElementById('up').addEventListener(eventType, (event) => {
+        event.preventDefault();
         changeDirection(0, -gridSize);
     });
-    document.getElementById('down').addEventListener(eventType, (e) => {
-        e.preventDefault();
+    document.getElementById('down').addEventListener(eventType, (event) => {
+        event.preventDefault();
         changeDirection(0, gridSize);
     });
-    document.getElementById('left').addEventListener(eventType, (e) => {
-        e.preventDefault();
+    document.getElementById('left').addEventListener(eventType, (event) => {
+        event.preventDefault();
         changeDirection(-gridSize, 0);
     });
-    document.getElementById('right').addEventListener(eventType, (e) => {
-        e.preventDefault();
+    document.getElementById('right').addEventListener(eventType, (event) => {
+        event.preventDefault();
         changeDirection(gridSize, 0);
     });
 });
-restartBtn.addEventListener('click', initGame);
 
-// Telegram WebApp integration
 if (window.Telegram && Telegram.WebApp) {
     Telegram.WebApp.expand();
     Telegram.WebApp.enableClosingConfirmation();
     const user = Telegram.WebApp.initDataUnsafe.user;
     if (user) {
         userId = user.id;
-        playerName = user.username ? `@${user.username}` : `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Игрок';
+        playerName = user.username
+            ? `@${user.username}`
+            : `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Игрок';
     }
 }
 
-// Start the game once IndexedDB is ready
-dbRequest.onsuccess = () => {
-    loadLeaderboard();
-    initGame();
-};
-
-// Keyboard controls for desktop
 document.addEventListener('keydown', (event) => {
+    if (event.key === ' ') {
+        event.preventDefault();
+    }
+
     switch (event.key) {
         case 'ArrowUp':
         case 'w':
@@ -459,7 +497,7 @@ document.addEventListener('keydown', (event) => {
         case 'D':
             changeDirection(gridSize, 0);
             break;
-        case ' ': // Space bar toggles pause
+        case ' ':
             togglePause();
             break;
     }

@@ -1,62 +1,84 @@
-# Telegram Snake Game (Improved)
+# Telegram Snake Game
 
-This project contains an improved version of the classic Snake game integrated into a Telegram bot using the **python‑telegram‑bot** library.  
-The bot serves an HTML5 game through Telegram's inline game platform and records users' scores in a local SQLite database.  
-This repository improves upon the original implementation by fixing duplicated code, adding new gameplay features, improving code structure, and enhancing the overall user experience.
+Небольшой проект с HTML5-версией Snake и Telegram-ботом на `python-telegram-bot`. Бот запускает игру через Telegram Games и хранит результаты в локальной SQLite-базе, а фронтенд дополнительно показывает локальный топ в браузере через IndexedDB.
 
-## Features
+## Что внутри
 
-- **Python Bot with SQLite database** – stores scores with timestamps and provides commands to view top players, personal bests and recent games.
-- **HTML5 Snake game** – includes on‑screen controls for mobile devices, wrap‑around edges, IndexedDB for local highscores, and integration with Telegram WebApp to identify the player.
-- **New gameplay elements** – optional obstacles that appear as your score increases, speed increases every five points, and a pause/resume button.
-- **Responsive design** – looks good on mobile devices thanks to flexbox layout and touch event support.
-- **Robust logging** – all errors are logged to `bot_errors.log` for easier debugging.
-- **Modular code** – duplicated code has been removed and helper functions are split into logical sections for readability and maintainability.
+- `snake_bot.py` - Telegram-бот, команды, обработка callback'ов и запись результатов в SQLite.
+- `snake_game.html` - сама игра на HTML/CSS/JavaScript.
+- `.env.example` - пример переменных окружения.
+- `requirements.txt` - зависимости Python.
 
-## Setup and Installation
+## Возможности
 
-1. **Clone the repository** and change into its directory:
+- команды `/start`, `/play`, `/top`, `/mytop`, `/last`
+- локальное хранение результатов игры в браузере
+- адаптация под мобильный экран
+- пауза, ускорение игры и препятствия
+- логирование ошибок в файл
+
+## Быстрый старт
+
+1. Клонируйте репозиторий:
 
    ```bash
    git clone https://github.com/DizzyZ7/telegram-snake-game.git
    cd telegram-snake-game/improved_snake_game
    ```
 
-2. **Create a virtual environment** and install dependencies:
+2. Создайте и активируйте виртуальное окружение:
+
+   Windows PowerShell:
+
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   ```
+
+   macOS / Linux:
 
    ```bash
-   python3 -m venv venv
-   source venv/bin/activate
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+3. Установите зависимости:
+
+   ```bash
    pip install -r requirements.txt
    ```
 
-3. **Configure your bot token**: create a `.env` file in the repository root (see `.env.example`) and set `TELEGRAM_BOT_TOKEN` to the token you received from [@BotFather](https://t.me/BotFather).
+4. Создайте `.env` по примеру `.env.example` и укажите токен:
 
-4. **Run the bot**:
+   ```env
+   TELEGRAM_BOT_TOKEN=your_token_here
+   ```
+
+5. Запустите бота:
 
    ```bash
    python snake_bot.py
    ```
 
-   The bot will start polling for updates. Use `/start` in your Telegram chat with the bot to see available commands.
+## Важное про деплой
 
-## Commands
+- `snake_game.html` можно хостить на GitHub Pages.
+- `snake_bot.py` должен работать на отдельной машине или сервере, где доступна сеть и хранится `scores.db`.
+- Локальный топ внутри HTML-игры хранится в браузере игрока и не заменяет серверный рейтинг бота.
 
-| Command | Description |
-|---------|-------------|
-| `/start` | Greets the user and shows available commands. |
-| `/play` | Sends the Snake game to the user. |
-| `/top` | Shows the top 10 players of all time. |
-| `/mytop` | Shows your top 5 scores. |
-| `/last` | Shows the last 10 games recorded. |
+## Команды бота
 
-## Files
+| Команда | Описание |
+| --- | --- |
+| `/start` | Приветствие и список команд |
+| `/play` | Запуск игры |
+| `/top` | Топ игроков |
+| `/mytop` | Лучшие результаты текущего пользователя |
+| `/last` | Последние сыгранные партии |
 
-- **`snake_bot.py`** – main bot implementation; handles commands, interacts with SQLite database, and logs errors.
-- **`snake_game.html`** – HTML5/JavaScript implementation of the Snake game with obstacles and pause/resume functionality. It is served by Telegram automatically when users tap the game.
-- **`.env.example`** – sample environment file; copy to `.env` and fill in your bot token.
-- **`requirements.txt`** – Python dependencies for the bot.
+## Перед публикацией на GitHub
 
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](../LICENSE) file for details.
+- не коммитьте `.env`
+- не коммитьте `scores.db`
+- не коммитьте `bot_errors.log`
+- проверьте, что `GAME_URL` в `snake_bot.py` указывает на реальный опубликованный `snake_game.html`
